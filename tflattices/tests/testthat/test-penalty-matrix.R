@@ -1,0 +1,13 @@
+test_that("penalty matrix creator works", {
+  p1 <- penalty_matrix(c(4,5))
+  p2 <- penalty_matrix(c(4,5), 1)
+  p3 <- penalty_matrix(c(4,5), wrap = TRUE)
+  expect_equal(dim(p1), c(31L, 20L))
+  expect_equal(dim(p2), c(22L, 20L))
+  expect_equal(dim(p3), c(40L, 20L))
+  expect_error(penalty_matrix(c(4,5), c(1,1,1)))
+  expect_error(penalty_matrix(c(4,5), -1))
+  expect_error(penalty_matrix(c(4,5), c(1,1,1), -1))
+  expect_error(penalty_matrix(c(4,5), wrap = 2))
+  expect_error(penalty_matrix(c(-4,5)))
+})

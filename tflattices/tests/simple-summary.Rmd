@@ -1,0 +1,153 @@
+---
+title: Some notes on the code
+output:
+  html_document:
+    highlight: tango
+---
+
+## Exponential families
+
+Suppose $Y$ has a pdf/pmf which can be written as
+$$
+f_Y(y; \theta) = h(y)exp(y\theta - \varphi(\theta)),
+$$
+for some functions $h$ and $\varphi$. Then we say that $Y$ has a (1-parameter) natural exponential family distribution. Standard examples are Gaussian, exponential, binomial (with $n$ fixed), Poisson, etc. Essentially, most distributions you can name. These are "easy" to work with. 
+
+We call $h$ the dominating measure and $\varphi$ the cumulant generating function (or log partition function). Some nice properties are that $E[Y] = d/d\theta\ \varphi(\theta)$ and $V[Y] = d^2/d\theta^2\ \varphi(\theta)$.
+
+This package focuses on solving an optimization problem related to exponential families. In particular, it tries to minimize the negative log likelihood with an additional penalty. Given an iid sample from $f_Y$, the negative log likelihood is (up to a constant in $y$)
+$$
+-\ell(\theta) = \frac{1}{n}\sum_{i=1}^n -y_i \theta + \varphi(\theta).
+$$
+The minimizer is $\hat\theta = (\varphi')^{-1} (\overline{y})$. Under some simple assumptions, this inverse always exists.
+
+In the code here, we assume that the $y_i$ are independent, but that they each have their own $\theta_i$. Our goal is to solve
+$$
+\min_{\theta_1,\ldots,\theta_n} \frac{1}{n}\sum_{i=1}^n \varphi(\theta_i) - y_i\theta_i + \lambda \left\lVert D\theta \right\rVert_1,
+$$
+for a particular matrix $D$.
+
+### Null space penalty
+
+Given a basis $B$ of the null space of $D$, we may also wish to solve a related optimization that penalizes the projection of $\theta$ onto $null(D)$. In our case, we have an orthonormal basis ($B^\top B=I$), so the projection is given by $BB^\top$. Thus, we want to solve
+$$
+\min_{\theta_1,\ldots,\theta_n} \frac{1}{n}\sum_{i=1}^n \varphi(\theta_i) - y_i\theta_i + \lambda \left\lVert D\theta \right\rVert_1 + \lambda\alpha\left\lVert BB^\top \theta\right\rVert_2^2,
+$$
+for some $\alpha\geq 0$. Now, because $B$ is orthonormal, 
+$$
+\left\lVert BB^\top \theta\right\rVert_2^2 = \theta^\top BB^\top BB^\top \theta = \theta^\top B B^\top \theta = \left\lVert B^\top\theta\right\rVert_2^2.
+$$
+
+## Optimizing by linearized ADMM
+
+The way we solve the optimization problem above is with an algorithm called linearized ADMM. Essentially, you rewrite the problem as (substituting $x$ for $\theta$)
+$$
+\min_{Dx=z} \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \lambda \left\lVert z \right\rVert_1.
+$$
+It should be clear that this is equivalent to the previous problem but with  extra variables. The Lagrangian is
+$$
+L(x,z,w) = \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \lambda \left\lVert z \right\rVert_1 + w^{\top}(Dx-z),
+$$
+and the augmented Lagrangian is
+$$
+L_{\rho}(x,z,w) = \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \lambda \left\lVert z \right\rVert_1 + w^{\top}(Dx-z) + \frac{\rho}{2}\left\lVert Dx-z\right\rVert_2^2.
+$$
+
+It's usually easier to do in "scaled" form. Define $u=w/\rho$, then
+the augmented Lagrangian is
+$$
+L_{\rho}(x,z,u) = \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \lambda \left\lVert z \right\rVert_1 + \frac{\rho}{2}\left\lVert Dx-z+u\right\rVert_2^2-\frac{\rho}{2}\left\lVert u \right\rVert_2^2.
+$$
+
+The scaled ADMM algorithm iteratively solves this problem by minimizing over $x$ then $z$ then $\mu$:
+$$
+\begin{aligned}
+x &\leftarrow \arg\min_x \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \frac{\rho}{2}\left\lVert Dx-z+u\right\rVert_2^2,\\
+z &\leftarrow \arg\min_z \lambda \left\lVert z \right\rVert_1 +  \frac{\rho}{2}\left\lVert Dx-z+u\right\rVert_2^2,\\
+u &\leftarrow u + Dx - z.
+\end{aligned}
+$$
+
+
+However, the $x$ solution involves a matrix inversion (due to the quadratic in $Dx-z$) which is best avoided. So we linearize that problem (the $x$ update only) around the current value $x^o$
+$$
+x \leftarrow \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \rho \left(D^\top D x^o - D^\top z + D^\top u\right)^\top x + \frac{\mu}{2}\left\lVert x-x^o \right\rVert_2^2
+$$
+
+### Including the null space penalty
+
+The changes only impact the $x$ update. The original update above becomes
+$$
+x \leftarrow \arg\min_x \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \frac{\rho}{2}\left\lVert Dx-z+u\right\rVert_2^2 + \lambda\alpha \left\lVert B^\top x\right\rVert_2^2.
+$$
+
+$$
+x \leftarrow \frac{1}{n}\sum \varphi(x_i) - y_i x_i + \rho \left(D^\top D x^o - D^\top z + D^\top u\right)^\top x +\lambda\alpha (BB^\top x^o)^\top x + \frac{\mu}{2}\left\lVert x-x^o \right\rVert_2^2
+$$
+
+
+
+## Solutions
+
+We drop the $\frac{1}{n}$ term everywhere. This has the effect of making $\rho$ and $\lambda$ larger, but is otherwise unimportant.
+
+### Solving the linearized approximation
+
+Note first that the result is the same for each $i$, so we solve $n$ 1 dimensional problems.
+
+Taking the derivative with respect to $x_i$ gives
+$$
+\left(\varphi'(x_i) - y_i\right)  + \rho \left[D^\top \left(D x^o - z+u\right)\right]_i + \mu( x_i-x_i^o),
+$$
+where $[\cdot]_i$ means the $i^{th}$ element of the vector.
+
+If we set this to zero, and partially solve, we get
+$$
+\varphi'(x_i) + \mu x_i =  y_i  - \rho\left(D^\top D x^o - D^\top z+u\right)_i + \mu x_i^o.
+$$
+
+Now, define $v := \mu x^o - \rho D^\top\left(D x^o - z+u\right)$. 
+
+Therefore, for any loss function, as given by $\varphi$, we want to solve
+$$
+\varphi'(x_i) + \mu x_i =  y_i + v_i,
+$$
+for each $i$. This is the goal of `lossfunctions.h`.
+
+### Solving the linearized approximation with null space penalty
+
+Note first that the result is the same for each $i$, so we solve $n$ 1 dimensional problems.
+
+Taking the derivative with respect to $x_i$ gives
+$$
+\varphi'(x_i) - y_i  + \rho \left[D^\top \left(D x^o - z+u\right)\right]_i + \lambda\alpha [BB^\top x^o]_i + \mu( x_i-x_i^o),
+$$
+where $[\cdot]_i$ means the $i^{th}$ element of the vector.
+
+If we set this to zero, and partially solve, we get
+$$
+\varphi'(x_i) + \mu x_i =  y_i  - \rho\left(D^\top D x^o - D^\top z+u\right)_i - \lambda\alpha (BB^\top x^o)_i + \mu x_i^o.
+$$
+
+Now, define $v := \mu x^o - \rho D^\top\left(D x^o - z+u\right) - \lambda\alpha BB^\top x^o$. 
+
+
+Examples:
+
+1. Suppose $X_i$ is Gaussian, with mean $\mu_i$ and variance 1. Then, $\theta=\mu$ and $\varphi(\theta) = \theta^2/2$. Thus, $\varphi'(\theta) = \theta$, so our function `gaussupdate()` should be $x_i = (y_i + v_i)/(1+\mu)$.
+
+2. Suppose $X_i$ is Poisson with rate $\lambda$. Then, $\theta=\log\lambda$ and $\varphi(\theta) = \exp(\theta)$. Thus, $\varphi'(\theta) = \exp(\theta)$, so `poisupdate()` should be the solution to $\exp(x_i) + \mu x_i = y_i + v_i$. This turns out to be $x_i = (y_i+v_i)/\mu - W(\exp((y_i+v_i)/\mu) / \mu)$.
+
+3. The other loss function is Gaussian with mean 0 and variance $\sigma^2$. Check that it's the right update.
+
+4. It would be good to have other distributions: exponential, gamma, Bernoulli, etc. See https://en.wikipedia.org/wiki/Exponential_family.
+
+
+### The soft thresholding operator
+
+The $z$ update is quite easy, and also operates element wise. Taking a derivative and setting it to 0, and writing $r = Dx+u$ you get that 
+$$
+z_i \leftarrow sign(r_i) (|r_i| - \lambda/\rho)_+
+$$
+This is called "elementwise soft thresholding". The function $(x)_+$ means $\max(x,0)$. This is implemented by `EntrywiseSoftThreshold()`.
+

@@ -1,0 +1,36 @@
+Package: tflattices
+Title: Estimates Exponential Family Trend Filter Over Gridded Data
+Version: 1.0.0
+Authors@R:
+    c(person(given = "Daniel",
+             family = "McDonald",
+             role = c("aut", "cre"),
+             email = "daniel@stat.ubc.ca"),
+      person(given="Joseph", 
+             family="Stoica", 
+             role="aut", 
+             email="jastoica@iu.edu"))
+Description: This package uses a linearized alternating direction method of
+    moments algorithm to estimate the natural parameter for a univariate
+    exponential family distribution observed over a grid. The loglikelihood
+    is augmented with a trend filter penalty of arbitrary order and optionally
+    a penalty on the null space of the TF operator. The grid is allowed to wrap
+    as a cylinder if desired.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Imports: 
+    Rcpp,
+    ggplot2
+Suggests: 
+    testthat
+Depends: 
+    Matrix,
+    R (>= 3.6)
+LinkingTo: 
+    Rcpp,
+    RcppArmadillo,
+    BH
+SystemRequirements: C++11
